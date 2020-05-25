@@ -1,0 +1,10 @@
+{
+    "DeploymentMethod": "lambda",
+    "Functions": {
+        "heythisischris": {
+            "PhysicalId": {
+                "us-east-2": "heythisischris"
+            }
+        }
+    }
+}

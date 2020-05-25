@@ -1,0 +1,14 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: An AWS Serverless Specification template describing your function.
+Resources:
+  heythisischris:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      FunctionName: heythisischris
+      Description: ''
+      Handler: index.handler
+      MemorySize: 256
+      Role: 'arn:aws:iam::362059672355:role/service-role/heythisischris-role-v3xc2f5o'
+      Runtime: nodejs12.x
+      Timeout: 3
