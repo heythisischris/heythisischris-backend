@@ -8,6 +8,7 @@ const poolConfig = {
 };
 const Parser = require('rss-parser');
 const parser = new Parser();
+const fetch = require('node-fetch');
 
 exports.handler = async(event) => {
     if (event.body) {
@@ -15,9 +16,21 @@ exports.handler = async(event) => {
     }
 
     if (event.path === '/github') {
-        let feed = await parser.parseURL('https://github.com/heythisischris/heythisischris-web/commits.atom');
+        let headers = {
+            method: 'GET',
+            headers: { Authorization: 'Basic ' + Buffer.from('heythisischris:76a918b0be9be0222d1a6288a95cc5ff0f09c9ff').toString('base64') }
+        };
+        let repos = await fetch('https://api.github.com/users/heythisischris/repos', headers);
+        repos = await repos.json();
+        let responseArray = [];
+        for (let repo of repos) {
+            let repoData = await fetch(repo.commits_url.slice(0, -6), headers);
+            repoData = await repoData.json();
+            responseArray = responseArray.concat(repoData.map(obj => { return { date: obj.commit.author.date, repo: repo.name, repoUrl: repo.html_url, commit: obj.commit.message, commitUrl: obj.html_url } }));
+        }
+        responseArray.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        return { statusCode: 200, body: JSON.stringify(feed.items), headers: { 'Access-Control-Allow-Origin': '*' } };
+        return { statusCode: 200, body: JSON.stringify(responseArray), headers: { 'Access-Control-Allow-Origin': '*' } };
     }
     else if (event.path === '/feed') {
         let feed = await parser.parseURL('https://listed.to/@heythisischris/feed');
