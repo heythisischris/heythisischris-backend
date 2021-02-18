@@ -18,20 +18,30 @@ exports.handler = async(event) => {
     if (event.path === '/github') {
         let headers = {
             method: 'GET',
-            headers: { Authorization: 'Basic ' + Buffer.from('heythisischris:'+process.env.github).toString('base64') }
+            headers: { Authorization: 'Basic ' + Buffer.from('heythisischris:' + process.env.github).toString('base64') }
         };
         let repos = await fetch('https://api.github.com/users/heythisischris/repos', headers);
         repos = await repos.json();
-        console.log(repos);
+        let orgs = await fetch('https://api.github.com/users/heythisischris/orgs', headers);
+        orgs = await orgs.json();
+        for (let org of orgs) {
+            console.log(org.repos_url);
+            let orgData = await fetch(org.repos_url, headers);
+            orgData = await orgData.json();
+            for (let repo of orgData) {
+                repos.push({ commits_url: repo.commits_url, name: repo.name });
+            }
+        }
+
         let responseArray = [];
         for (let repo of repos) {
             let repoData = await fetch(repo.commits_url.slice(0, -6), headers);
             repoData = await repoData.json();
-            responseArray = responseArray.concat(repoData.map(obj => { return { date: obj.commit.author.date, repo: repo.name, repoUrl: repo.html_url, commit: obj.commit.message, commitUrl: obj.html_url } }));
+            responseArray = responseArray.concat(repoData.map(obj => { if (obj.commit.author.name === 'Chris Aitken') { return { date: obj.commit.author.date, repo: repo.name, repoUrl: repo.html_url, commit: obj.commit.message, commitUrl: obj.html_url } } }));
         }
         responseArray.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        return { statusCode: 200, body: JSON.stringify(responseArray.splice(0,25)), headers: { 'Access-Control-Allow-Origin': '*' } };
+        return { statusCode: 200, body: JSON.stringify(responseArray.splice(0, 25)), headers: { 'Access-Control-Allow-Origin': '*' } };
     }
     else if (event.path === '/feed') {
         let feed = await parser.parseURL('https://blog.heythisischris.com/feed');
