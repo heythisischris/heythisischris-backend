@@ -1,3 +1,4 @@
+const AWS = require('aws-sdk');
 const { Pool } = require('pg');
 const poolConfig = {
     user: process.env.user,
@@ -11,37 +12,70 @@ const parser = new Parser();
 const fetch = require('node-fetch');
 
 exports.handler = async(event) => {
-    if (event.body) {
-        event.body = JSON.parse(event.body);
-    }
+    console.log('heythisischris init');
+    event.body ? event.body = JSON.parse(event.body) : event.body = {};
 
     if (event.path === '/github') {
-        let headers = {
-            method: 'GET',
-            headers: { Authorization: 'Basic ' + Buffer.from('heythisischris:' + process.env.github).toString('base64') }
-        };
-        let repos = await fetch('https://api.github.com/users/heythisischris/repos', headers);
-        repos = await repos.json();
-        let orgs = await fetch('https://api.github.com/users/heythisischris/orgs', headers);
-        orgs = await orgs.json();
-        for (let org of orgs) {
-            console.log(org.repos_url);
-            let orgData = await fetch(org.repos_url, headers);
-            orgData = await orgData.json();
-            for (let repo of orgData) {
-                repos.push({ commits_url: repo.commits_url, name: repo.name });
+        let graphql = await fetch('https://api.github.com/graphql', {
+            method: 'POST',
+            body: JSON.stringify({
+                query: `{${['place4pals', 'productabot', 'heythisischris'].map(obj => `
+  ${obj}: search(query: "org:${obj}", type: REPOSITORY, last: 10) {
+    nodes {
+      ... on Repository {
+        name
+        url
+        refs(refPrefix: "refs/heads/", first: 10) {
+          edges {
+            node {
+              ... on Ref {
+                name
+                target {
+                  ... on Commit {
+                    history(first: 100, author: {emails:["chris@heythisischris.com","thisischrisaitken@gmail.com","caitken@teckpert.com"]}) {
+                      edges {
+                        node {
+                          ... on Commit {
+                            message
+                            commitUrl
+                            committedDate
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
+          }
         }
-
+      }
+    }
+}`).join('')}}`
+            }),
+            headers: { Authorization: 'Basic ' + Buffer.from('heythisischris:' + process.env.github).toString('base64') }
+        });
+        graphql = await graphql.json();
         let responseArray = [];
-        for (let repo of repos) {
-            let repoData = await fetch(repo.commits_url.slice(0, -6), headers);
-            repoData = await repoData.json();
-            responseArray = responseArray.concat(repoData.map(obj => { if (obj.commit.author.name === 'Chris Aitken') { return { date: obj.commit.author.date, repo: repo.name, repoUrl: repo.html_url, commit: obj.commit.message, commitUrl: obj.html_url } } }));
+        for (let org of Object.values(graphql.data)) {
+            for (let repo of org.nodes) {
+                for (let branch of repo.refs.edges) {
+                    responseArray = responseArray.concat(branch.node.target.history.edges.map(obj => {
+                        return {
+                            date: obj.node.committedDate,
+                            repo: repo.name,
+                            repoUrl: repo.url,
+                            branch: branch.node.name,
+                            commit: obj.node.message,
+                            commitUrl: obj.node.commitUrl
+                        };
+                    }));
+                }
+            }
         }
         responseArray.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        return { statusCode: 200, body: JSON.stringify(responseArray.splice(0, 25)), headers: { 'Access-Control-Allow-Origin': '*' } };
+        return { statusCode: 200, body: JSON.stringify(responseArray.splice(0, 30)), headers: { 'Access-Control-Allow-Origin': '*' } };
     }
     else if (event.path === '/feed') {
         let feed = await parser.parseURL('https://blog.heythisischris.com/feed');
@@ -56,16 +90,24 @@ exports.handler = async(event) => {
         return { statusCode: 200, body: JSON.stringify(feed.items), headers: { 'Access-Control-Allow-Origin': '*' } };
     }
     else if (event.path === '/contact') {
-        let sgMail = require('@sendgrid/mail');
-        sgMail.setApiKey(process.env.sendgrid);
-        const msg = {
-            to: 'chris@heythisischris.com',
-            from: 'noreply@heythisischris.com',
-            subject: `${event.body.name} contacted you from ${event.body.email}`,
-            text: event.body.message,
-            html: event.body.message
-        };
-        await sgMail.send(msg);
+        AWS.config.update({ region: 'us-east-1' });
+        let response = await new AWS.SES().sendEmail({
+            Destination: {
+                ToAddresses: ['chris@heythisischris.com']
+            },
+            Message: {
+                Body: {
+                    Html: { Data: event.body.message },
+                    Text: { Data: event.body.message }
+                },
+                Subject: {
+                    Data: `${event.body.name} contacted you from ${event.body.email}`
+                }
+            },
+            Source: 'noreply@heythisischris.com',
+            ReplyToAddresses: ['noreply@heythisischris.com'],
+        }).promise();
+        console.log(response);
 
         return { statusCode: 200, body: JSON.stringify('success'), headers: { 'Access-Control-Allow-Origin': '*' } };
     }
